@@ -1,0 +1,60 @@
+// styles/OptionsPanel.styles.js
+import { StyleSheet } from 'react-native';
+
+export const optionsPanelStyles = StyleSheet.create({
+    panelContainer: {
+        position: 'absolute',
+        top: '30%',
+        left: '10%',
+        right: '10%',
+        padding: 20,
+        backgroundColor: '#ffffff',
+        borderRadius: 10,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 5,
+        elevation: 5,
+        zIndex: 20,
+    },
+    closeButton: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        padding: 5,
+        borderRadius: 15,
+        backgroundColor: '#F3F4F6',
+    },
+    closeButtonText: {
+        fontSize: 16,
+        color: '#333',
+    },
+    title: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginBottom: 20,
+        color: '#1F2937',
+    },
+    optionButton: {
+        width: '100%',
+        paddingVertical: 12,
+        paddingHorizontal: 15,
+        marginBottom: 10,
+        backgroundColor: '#F9FAFB',
+        borderRadius: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    optionText: {
+        fontSize: 16,
+        color: '#1F2937',
+        fontWeight: '500',
+    },
+});

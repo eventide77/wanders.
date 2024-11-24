@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "projekt",
+    "slug": "projekt",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "main": "node_modules/expo/AppEntry.js",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app needs your location to display nearby places.",
+        "NSLocationAlwaysUsageDescription": "This app needs your location in the background to provide notifications for nearby places.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "We require your location to provide location-based features.",
+        "NSPhotoLibraryUsageDescription": "We need access to your photo library to upload images.",
+        "NSCameraUsageDescription": "We need access to your camera to take photos for the app.",
+        "NSMotionUsageDescription": "This app uses motion data to enhance the user experience.",
+        "UIBackgroundModes": ["location", "fetch"]
+      },
+      "bundleIdentifier": "com.yourcompany.projekt"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "CAMERA",
+        "FOREGROUND_SERVICE"
+      ],
+      "package": "com.yourcompany.projekt"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5cde4c3b-08af-4619-b397-7d764f56a9db"
+      }
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#ffffff",
+      "barStyle": "dark-content"
+    },
+    "newArchEnabled": true
+  }
+}
