@@ -10,48 +10,108 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import FastImage from 'react-native-fast-image';
 import { detailPanelStyles } from '../styles/DetailPanel.styles';
-import { auth } from '../firebase'; // Import firebase
-import { addToVisitedPlaces } from "../firebase";
-import * as ImagePicker from 'expo-image-picker';
+import { auth, db } from '../firebase';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 const DetailPanel = ({
                          place = {},
-                         isFavorite,
+                         isFavorite: initialIsFavorite,
                          onClose,
-                         onToggleFavorite, // Funkcja obsługująca dodawanie/usuwanie ulubionych
                          onAddToJourney,
-                         journey, // Historia podróży
+                         userLocation,
+                         journey,
+                         onUpdateMarker, // Funkcja przekazana do aktualizacji markerów
                      }) => {
+    const [isFavorite, setIsFavorite] = useState(initialIsFavorite);
     const [isVisited, setIsVisited] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editedPlace, setEditedPlace] = useState({
         name: place.name || '',
         description: place.description || '',
     });
-    const [selectedImage, setSelectedImage] = useState(null);
 
-    // Sprawdzenie, czy użytkownik jest autorem znacznika
     const isAuthor = place.authorId === auth.currentUser?.uid;
 
-    const pickImageFromGallery = async () => {
-        try {
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
-                aspect: [4, 3],
-                quality: 1,
-            });
+    useEffect(() => {
+        const visited = journey.some((journeyPlace) => journeyPlace.id === place.id);
+        setIsVisited(visited);
+    }, [journey, place]);
 
-            if (!result.canceled) {
-                setSelectedImage(result.assets[0].uri);
-                console.log('Selected Image:', result.assets[0].uri);
-            }
+    const handleVisitButtonClick = async () => {
+        if (!userLocation) {
+            Alert.alert('Error', 'Your current location is unavailable.');
+            return;
+        }
+
+        const distance = calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            place.latitude,
+            place.longitude
+        );
+
+        if (distance > 100) {
+            Alert.alert('You are not there yet, wanderer!');
+            return;
+        }
+
+        try {
+            await onAddToJourney(place);
+            setIsVisited(true);
+            Alert.alert('Success', 'Place marked as visited!');
         } catch (error) {
-            console.error('Error picking image:', error);
+            Alert.alert('Error', 'Failed to mark place as visited.');
         }
     };
 
-    // Logika edycji miejsca
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        const toRadians = (degree) => (degree * Math.PI) / 180;
+        const R = 6371e3; // Promień Ziemi w metrach
+        const φ1 = toRadians(lat1);
+        const φ2 = toRadians(lat2);
+        const Δφ = toRadians(lat2 - lat1);
+        const Δλ = toRadians(lon2 - lon1);
+
+        const a =
+            Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        const distance = R * c; // Dystans w metrach
+        return distance;
+    };
+
+    const toggleFavorite = async () => {
+        try {
+            const userDocRef = doc(db, 'users', auth.currentUser?.uid);
+            const userDoc = await getDoc(userDocRef);
+
+            let updatedFavorites = [];
+            if (userDoc.exists()) {
+                const currentFavorites = userDoc.data().favorites || [];
+                const isFav = currentFavorites.some((fav) => fav.id === place.id);
+
+                if (isFav) {
+                    // Usuń z ulubionych
+                    updatedFavorites = currentFavorites.filter((fav) => fav.id !== place.id);
+                } else {
+                    // Dodaj do ulubionych
+                    updatedFavorites = [...currentFavorites, place];
+                }
+            } else {
+                updatedFavorites = [place]; // Pierwszy ulubiony
+            }
+
+            await setDoc(userDocRef, { favorites: updatedFavorites }, { merge: true });
+            setIsFavorite((prev) => !prev);
+            Alert.alert('Success', isFavorite ? 'Removed from favorites!' : 'Added to favorites!');
+        } catch (error) {
+            Alert.alert('Error', 'Failed to update favorites.');
+        }
+    };
+
     const handleSaveEdits = async () => {
         if (!auth.currentUser) {
             Alert.alert('Error', 'You must be logged in to edit this place.');
@@ -64,46 +124,25 @@ const DetailPanel = ({
         }
 
         try {
-            // Zapis edycji miejsca do Firestore
+            const placeRef = doc(db, 'places', place.id);
+
+            const updatedPlace = {
+                name: editedPlace.name.trim(),
+                description: editedPlace.description.trim(),
+            };
+
+            await updateDoc(placeRef, updatedPlace);
+
+            // Aktualizacja w nadrzędnym komponencie
+            onUpdateMarker({ ...place, ...updatedPlace });
+
             Alert.alert('Success', 'Marker updated successfully!');
             setIsEditing(false);
         } catch (error) {
             Alert.alert('Error', 'Failed to save changes.');
-            console.error(error);
         }
     };
 
-    // Sprawdzenie, czy miejsce zostało odwiedzone
-    useEffect(() => {
-        const visited = journey.some((journeyPlace) => journeyPlace.id === place.id);
-        setIsVisited(visited);
-    }, [journey, place]);
-
-    // Obsługa oznaczenia miejsca jako odwiedzonego
-    const handleVisitPlace = async (place) => {
-        if (!auth.currentUser) {
-            Alert.alert("Error", "You must be logged in to mark a place as visited.");
-            return;
-        }
-
-        if (!place || !place.id || !place.name) {
-            console.error("Invalid place object:", place);
-            Alert.alert("Error", "The place is missing required details (ID and Name).");
-            return;
-        }
-
-        try {
-            await addToVisitedPlaces(auth.currentUser.uid, place); // Dodanie do Firestore
-            onAddToJourney(place); // Dodanie do journey w stanie aplikacji
-            setIsVisited(true); // Aktualizacja stanu po sukcesie
-            Alert.alert("Success", "Place added to your visited list!");
-        } catch (error) {
-            console.error("Error adding to visited places:", error);
-            Alert.alert("Error", "Failed to mark the place as visited.");
-        }
-    };
-
-    // Obsługa otwierania Google Maps
     const handleNavigate = () => {
         const url = `https://www.google.com/maps/dir/?api=1&destination=${place.latitude},${place.longitude}`;
         Linking.openURL(url).catch(() =>
@@ -125,102 +164,88 @@ const DetailPanel = ({
                     <MaterialCommunityIcons name="close" size={24} color="#333" />
                 </TouchableOpacity>
 
-                <Text style={detailPanelStyles.placeTitle}>{place.name || 'N/A'}</Text>
-
-                <View style={detailPanelStyles.imageContainer}>
-                    {place.imageUrl ? (
-                        <FastImage
-                            style={detailPanelStyles.placeImage}
-                            source={{ uri: place.imageUrl }}
-                            resizeMode={FastImage.resizeMode.cover}
-                        />
-                    ) : (
-                        <Text style={detailPanelStyles.imagePlaceholderText}>
-                            No Image Available
-                        </Text>
-                    )}
-                </View>
-
                 {isAuthor && (
-                    <View style={detailPanelStyles.editOptions}>
-                        {isEditing ? (
-                            <>
-                                <TextInput
-                                    style={detailPanelStyles.input}
-                                    value={editedPlace.name}
-                                    onChangeText={(text) => setEditedPlace((prev) => ({ ...prev, name: text }))}
-                                    placeholder="Edit name"
-                                />
-                                <TextInput
-                                    style={[detailPanelStyles.input, { height: 80 }]}
-                                    value={editedPlace.description}
-                                    onChangeText={(text) =>
-                                        setEditedPlace((prev) => ({ ...prev, description: text }))
-                                    }
-                                    placeholder="Edit description"
-                                    multiline
-                                />
-                                <TouchableOpacity
-                                    style={detailPanelStyles.saveButton}
-                                    onPress={handleSaveEdits}
-                                >
-                                    <Text style={detailPanelStyles.saveButtonText}>Save</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={detailPanelStyles.cancelButton}
-                                    onPress={() => setIsEditing(false)}
-                                >
-                                    <Text style={detailPanelStyles.cancelButtonText}>Cancel</Text>
-                                </TouchableOpacity>
-                            </>
-                        ) : (
-                            <TouchableOpacity
-                                style={detailPanelStyles.editButton}
-                                onPress={() => setIsEditing(true)}
-                            >
-                                <Text style={detailPanelStyles.editButtonText}>Edit Place</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                )}
-
-                {!isAuthor && (
                     <TouchableOpacity
-                        style={[
-                            detailPanelStyles.visitButton,
-                            isVisited && detailPanelStyles.visitedButton,
-                        ]}
-                        onPress={() => {
-                            if (!isVisited) {
-                                handleVisitPlace(place);
-                            }
-                        }}
+                        style={detailPanelStyles.editIcon}
+                        onPress={() => setIsEditing((prev) => !prev)}
                     >
-                        <Text style={detailPanelStyles.visitButtonText}>
-                            {isVisited ? 'Visited!' : 'I was here!'}
-                        </Text>
+                        <MaterialCommunityIcons name="pencil" size={22} color="#2563EB" />
                     </TouchableOpacity>
                 )}
 
-                <TouchableOpacity
-                    style={detailPanelStyles.favoriteIcon}
-                    onPress={() => onToggleFavorite(place)}
-                >
-                    <MaterialCommunityIcons
-                        name={isFavorite ? "heart" : "heart-outline"}
-                        size={32}
-                        color={isFavorite ? "red" : "gray"}
-                    />
-                </TouchableOpacity>
+                {isEditing ? (
+                    <View>
+                        <Text style={detailPanelStyles.editLabel}>Edit Name:</Text>
+                        <TextInput
+                            style={detailPanelStyles.editInput}
+                            value={editedPlace.name}
+                            onChangeText={(text) => setEditedPlace({ ...editedPlace, name: text })}
+                        />
+                        <Text style={detailPanelStyles.editLabel}>Edit Description:</Text>
+                        <TextInput
+                            style={detailPanelStyles.editInput}
+                            value={editedPlace.description}
+                            onChangeText={(text) =>
+                                setEditedPlace({ ...editedPlace, description: text })
+                            }
+                            multiline
+                        />
+                        <View style={detailPanelStyles.editActions}>
+                            <TouchableOpacity
+                                style={detailPanelStyles.saveButton}
+                                onPress={handleSaveEdits}
+                            >
+                                <Text style={detailPanelStyles.saveButtonText}>Save</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={detailPanelStyles.cancelButton}
+                                onPress={() => setIsEditing(false)}
+                            >
+                                <Text style={detailPanelStyles.cancelButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                ) : (
+                    <>
+                        <Text style={detailPanelStyles.placeTitle}>
+                            {place.name || 'N/A'}
+                        </Text>
+                        <View style={detailPanelStyles.imageContainer}>
+                            {place.imageUrl ? (
+                                <FastImage
+                                    style={detailPanelStyles.placeImage}
+                                    source={{ uri: place.imageUrl }}
+                                    resizeMode={FastImage.resizeMode.cover}
+                                />
+                            ) : (
+                                <Text style={detailPanelStyles.imagePlaceholderText}>
+                                    No Image Available
+                                </Text>
+                            )}
+                        </View>
+                        <Text style={detailPanelStyles.placeDescription}>
+                            {place.description || 'No description available.'}
+                        </Text>
 
-                <TouchableOpacity
-                    style={detailPanelStyles.navigateButton}
-                    onPress={handleNavigate}
-                >
-                    <Text style={detailPanelStyles.navigateButtonText}>Navigate</Text>
-                </TouchableOpacity>
+                        <TouchableOpacity
+                            style={detailPanelStyles.favoriteIcon}
+                            onPress={toggleFavorite}
+                        >
+                            <MaterialCommunityIcons
+                                name={isFavorite ? 'heart' : 'heart-outline'}
+                                size={32}
+                                color={isFavorite ? 'red' : 'gray'}
+                            />
+                        </TouchableOpacity>
 
-
+                        <TouchableOpacity
+                            style={detailPanelStyles.navigateButton}
+                            onPress={handleNavigate}
+                        >
+                            <Text style={detailPanelStyles.navigateButtonText}>Navigate</Text>
+                        </TouchableOpacity>
+                    </>
+                )}
             </View>
         </View>
     );

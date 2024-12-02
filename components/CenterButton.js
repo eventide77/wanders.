@@ -13,13 +13,13 @@ const CenterButton = ({ onPress }) => {
 const styles = StyleSheet.create({
     centerButton: {
         position: 'absolute',
-        top: 20,
+        top: 80,
         right: 20,
         backgroundColor: 'white',
         padding: 10,
         borderRadius: 50,
         elevation: 5, // Cień na Androidzie
-        shadowColor: '#000', // Cień na iOS
+        shadowColor: '#000000', // Cień na iOS
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.3,
         shadowRadius: 3,

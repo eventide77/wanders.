@@ -9,7 +9,7 @@ export const menuOptionsStyles = StyleSheet.create({
         backgroundColor: 'white',
         borderRadius: 10,
         padding: 10,
-        shadowColor: '#000',
+        shadowColor: '#ffffff',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.2,
         shadowRadius: 5,

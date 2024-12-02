@@ -3,7 +3,13 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'rea
 import { auth, loadUserData, addFriend } from '../firebase'; // Import Firebase funkcji
 import { profilePanelStyles as styles } from '../styles/ProfilePanel.styles';
 
-const ProfilePanel = ({ onClose, userProfile }) => {
+const ProfilePanel = ({ onClose, userProfile = {} }) => {
+    const {
+        name = "Guest",
+        distanceTraveled = 0,
+        friends = []
+    } = userProfile; // Destrukturyzacja z domyślnymi wartościami
+
     const handleAddFriend = async () => {
         Alert.prompt(
             "Add Friend",
@@ -41,14 +47,14 @@ const ProfilePanel = ({ onClose, userProfile }) => {
             <Text style={styles.title}>My Profile</Text>
 
             {/* Dane użytkownika */}
-            <Text style={styles.name}>{userProfile.name}</Text>
-            <Text style={styles.stats}>Distance Traveled: {userProfile.distanceTraveled} km</Text>
+            <Text style={styles.name}>{name}</Text>
+            <Text style={styles.stats}>Distance Traveled: {distanceTraveled} km</Text>
             <Text style={styles.stats}>Friends:</Text>
 
             {/* Lista znajomych */}
             <ScrollView style={styles.friendsList}>
-                {userProfile.friends.length > 0 ? (
-                    userProfile.friends.map((friend, index) => (
+                {friends.length > 0 ? (
+                    friends.map((friend, index) => (
                         <Text key={index} style={styles.friendName}>
                             {friend}
                         </Text>

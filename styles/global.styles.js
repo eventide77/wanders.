@@ -13,6 +13,27 @@ export const globalStyles = StyleSheet.create({
         padding: 16, // Marginesy wokół ekranu
     },
 
+    appBar: {
+        height: 76,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 16,
+        backgroundColor: '#3B82F6', // Tło
+        elevation: 2, // Zmniejsz cień
+        shadowOpacity: 0, // Usuń cień na iOS
+    },
+
+    appBarTitle: {
+        color: '#FFFFFF',
+        fontSize: 20,
+        fontWeight: 'bold',
+    },
+    menuIcon: {
+        padding: 6,
+    },
+
+
     // Nagłówki i tytuły
     title: {
         fontSize: 24,
@@ -152,28 +173,6 @@ export const globalStyles = StyleSheet.create({
     // Mapa
     map: {
         ...StyleSheet.absoluteFillObject, // Ustawienie mapy na pełny ekran
-    },
-
-    // Logo
-    logoContainer: {
-        position: 'absolute',
-        top: 20,
-        alignSelf: 'center',
-        backgroundColor: 'white',
-        borderRadius: 50,
-        padding: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 2,
-        zIndex: 10,
-        elevation: 5,
-    },
-    logo: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        resizeMode: 'cover',
     },
 
     // Menu

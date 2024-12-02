@@ -44,15 +44,35 @@ export const journeyPanelStyles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 20,
     },
-    closeButton: {
-        marginTop: 20,
-        backgroundColor: '#E5E7EB',
+    searchInput: {
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+        borderRadius: 8,
         padding: 10,
-        borderRadius: 5,
-        alignItems: 'center',
-    },
-    closeButtonText: {
-        color: '#111827',
+        marginBottom: 15,
+        backgroundColor: '#F9FAFB',
         fontSize: 16,
     },
+    subTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#1F2937',
+        marginBottom: 10,
+        marginTop: 20,
+    },
+    searchToggleButton: {
+        backgroundColor: '#3B82F6',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginVertical: 10,
+    },
+    searchToggleButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+
+
 });

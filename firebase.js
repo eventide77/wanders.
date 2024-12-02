@@ -15,6 +15,7 @@ import {
 import {
   initializeAuth,
   getReactNativePersistence,
+  getAuth,
 } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -28,132 +29,127 @@ const firebaseConfig = {
   appId: "1:799926973197:web:0faf817a7322c6bbaa7644",
 };
 
-// Inicjalizacja Firebase App (sprawdzamy, czy już istnieje)
+// Inicjalizacja Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // Inicjalizacja Firestore
 const db = getFirestore(app);
 
-// Inicjalizacja Firebase Auth z `AsyncStorage` dla zachowania sesji
+// Inicjalizacja Auth z `AsyncStorage` dla przechowywania sesji użytkownika
 const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(AsyncStorage),
 });
 
+// Pomocnicza funkcja do sprawdzania błędów
+const handleError = (error, context) => {
+  console.error(`Error in ${context}:`, error.message || error);
+  throw error;
+};
+
 /**
- * Helper functions for Firestore
+ * Funkcje pomocnicze Firestore
  */
 
-// Tworzy nowy dokument użytkownika lub aktualizuje istniejący
+// Inicjalizowanie użytkownika w Firestore
 const initializeUserInFirestore = async (uid, username = "New User") => {
   if (!uid) throw new Error("User ID is required to initialize user.");
+  try {
+    const userDoc = doc(db, "users", uid);
+    const userSnapshot = await getDoc(userDoc);
 
-  const userDoc = doc(db, "users", uid);
-  const userSnapshot = await getDoc(userDoc);
-
-  if (!userSnapshot.exists()) {
-    await setDoc(userDoc, {
-      username,
-      visitedPlaces: [],
-      favorites: [],
-      addedMarkers: [],
-      friendRequests: [],
-      friends: [],
-    });
+    if (!userSnapshot.exists()) {
+      await setDoc(userDoc, {
+        username,
+        visitedPlaces: [],
+        favorites: [],
+        addedMarkers: [],
+        friendRequests: [],
+        friends: [],
+      });
+    }
+  } catch (error) {
+    handleError(error, "initializeUserInFirestore");
   }
 };
 
-// Funkcja do pobierania danych użytkownika
+// Pobieranie danych użytkownika
 const loadUserData = async (uid) => {
   if (!uid) throw new Error("User ID is required to load user data.");
-
   try {
     const userDoc = doc(db, "users", uid);
     const userSnapshot = await getDoc(userDoc);
 
     if (userSnapshot.exists()) {
-      return userSnapshot.data(); // Zwraca dane użytkownika
+      return userSnapshot.data();
     } else {
       console.warn("User not found.");
       return null;
     }
   } catch (error) {
-    console.error("Error loading user data:", error);
-    throw error;
+    handleError(error, "loadUserData");
   }
 };
 
-// Dodanie miejsca do historii odwiedzonych miejsc
+// Dodanie miejsca do odwiedzonych
 const addToVisitedPlaces = async (uid, place) => {
-  if (!uid) throw new Error("User ID is required to add visited place.");
-
-  if (!place || !place.id || !place.name) {
-    console.warn("Invalid place object:", place);
-    throw new Error("Invalid place object. Ensure it contains an ID and name.");
+  if (!uid || !place?.id || !place?.name) {
+    throw new Error("Invalid arguments for addToVisitedPlaces.");
   }
-
   try {
     const userDoc = doc(db, "users", uid);
     await updateDoc(userDoc, {
-      visitedPlaces: arrayUnion({
-        id: place.id,
-        name: place.name,
-        latitude: place.latitude,
-        longitude: place.longitude,
-      }),
+      visitedPlaces: arrayUnion(place),
     });
   } catch (error) {
-    console.error("Error adding to visited places:", error);
-    throw error;
+    handleError(error, "addToVisitedPlaces");
   }
 };
 
+// Zapisywanie miejsca w Firestore
 const savePlaceToFirestore = async (place) => {
-  if (!place.name || !place.latitude || !place.longitude) {
-    throw new Error("Invalid place object. Ensure it contains a name, latitude, and longitude.");
+  if (!place?.name || !place?.latitude || !place?.longitude) {
+    throw new Error("Invalid place object. Ensure it contains name, latitude, and longitude.");
   }
-
   try {
-    const placeDoc = doc(collection(db, "places")); // Tworzy nowe miejsce z automatycznym ID
-    await setDoc(placeDoc, { ...place, id: placeDoc.id }); // Dodaje ID miejsca
-    return placeDoc.id; // Zwracamy ID miejsca
+    const placeDoc = doc(collection(db, "places")); // Automatyczne ID
+    await setDoc(placeDoc, { ...place, id: placeDoc.id });
+    return placeDoc.id;
   } catch (error) {
-    console.error("Error saving place to Firestore:", error);
-    throw error;
+    handleError(error, "savePlaceToFirestore");
   }
 };
 
-
-// Dodanie miejsca do ulubionych
+// Dodanie do ulubionych
 const addToFavorites = async (uid, place) => {
-  if (!uid) throw new Error("User ID is required to add favorite.");
-
+  if (!uid || !place) {
+    throw new Error("Invalid arguments for addToFavorites.");
+  }
   try {
     const userDoc = doc(db, "users", uid);
     await updateDoc(userDoc, {
       favorites: arrayUnion(place),
     });
   } catch (error) {
-    console.error("Error adding to favorites:", error);
-    throw error;
+    handleError(error, "addToFavorites");
   }
 };
 
-// Dodanie znacznika do listy dodanych przez użytkownika
+// Dodanie znacznika do użytkownika
 const addMarkerToUser = async (uid, marker) => {
-  if (!uid) throw new Error("User ID is required to add marker.");
-
+  if (!uid || !marker) {
+    throw new Error("Invalid arguments for addMarkerToUser.");
+  }
   try {
     const userDoc = doc(db, "users", uid);
     await updateDoc(userDoc, {
       addedMarkers: arrayUnion(marker),
     });
   } catch (error) {
-    console.error("Error adding marker to user:", error);
-    throw error;
+    handleError(error, "addMarkerToUser");
   }
 };
 
-// Wyszukaj użytkownika po nazwie użytkownika
+// Wyszukiwanie użytkownika po nazwie
 const searchUserByUsername = async (username) => {
   try {
     const usersRef = collection(db, "users");
@@ -161,61 +157,61 @@ const searchUserByUsername = async (username) => {
     const querySnapshot = await getDocs(q);
 
     if (!querySnapshot.empty) {
-      const user = querySnapshot.docs[0].data(); // Pobierz dane użytkownika
-      user.id = querySnapshot.docs[0].id; // Dodaj ID użytkownika
-      return user;
+      const userDoc = querySnapshot.docs[0];
+      return { id: userDoc.id, ...userDoc.data() };
     } else {
       throw new Error("User not found.");
     }
   } catch (error) {
-    console.error("Error searching user:", error);
-    throw error;
+    handleError(error, "searchUserByUsername");
   }
 };
 
 // Wysyłanie zaproszenia do znajomych
 const sendFriendRequest = async (fromUid, toUid) => {
+  if (!fromUid || !toUid) {
+    throw new Error("Invalid arguments for sendFriendRequest.");
+  }
   try {
     const toUserDoc = doc(db, "users", toUid);
     await updateDoc(toUserDoc, {
-      friendRequests: arrayUnion(fromUid), // Dodaj ID nadawcy do zaproszeń
+      friendRequests: arrayUnion(fromUid),
     });
   } catch (error) {
-    console.error("Error sending friend request:", error);
-    throw error;
+    handleError(error, "sendFriendRequest");
   }
 };
 
 // Akceptowanie zaproszenia do znajomych
 const acceptFriendRequest = async (currentUid, friendUid) => {
+  if (!currentUid || !friendUid) {
+    throw new Error("Invalid arguments for acceptFriendRequest.");
+  }
   try {
     const currentUserDoc = doc(db, "users", currentUid);
     const friendUserDoc = doc(db, "users", friendUid);
 
-    // Dodaj ID do listy znajomych obu użytkowników
     await updateDoc(currentUserDoc, {
       friends: arrayUnion(friendUid),
-      friendRequests: arrayRemove(friendUid), // Usuń zaproszenie
+      friendRequests: arrayRemove(friendUid),
     });
 
     await updateDoc(friendUserDoc, {
       friends: arrayUnion(currentUid),
     });
   } catch (error) {
-    console.error("Error accepting friend request:", error);
-    throw error;
+    handleError(error, "acceptFriendRequest");
   }
 };
 
-/**
- * Eksport instancji Firestore, Auth i funkcji pomocniczych
- */
+// Eksport modułów i funkcji
 export {
   db,
   auth,
   initializeUserInFirestore,
   loadUserData,
   addToVisitedPlaces,
+  savePlaceToFirestore,
   addToFavorites,
   addMarkerToUser,
   searchUserByUsername,

@@ -19,16 +19,24 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { globalStyles } from './styles/global.styles';
 import DetailPanel from './components/DetailPanel';
-import SearchingPanel from './components/SearchingPanel';
 import AddSpotPanel from './components/AddSpotPanel';
-import FavoritesPanel from './components/FavoritesPanel';
-import JourneyPanel from './components/JourneyPanel';
 import OptionsPanel from './components/OptionsPanel';
 import ProfilePanel from './components/ProfilePanel';
 import SettingsPanel from './components/SettingsPanel';
-import haversine from 'haversine-distance'; // Pamiętaj, aby zainstalować tę bibliotekę: npm install haversine-distance
 import CenterButton from './components/CenterButton';
 import * as ImagePicker from 'expo-image-picker';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { NavigationContainer } from '@react-navigation/native';
+import MapScreen from './screens/MapScreen'; // Ekran mapy
+import SearchingPanel from './components/SearchingPanel'; // Panel wyszukiwania
+import FavoritesPanel from './components/FavoritesPanel'; // Panel ulubionych miejsc
+import JourneyPanel from './components/JourneyPanel'; // Historia podróży
+import Header from './components/Header';
+
+
+
+
+const Tab = createBottomTabNavigator(); // Tworzymy instancję nawigatora
 
 const requestPermissions = async () => {
     try {
@@ -64,7 +72,7 @@ const requestPermissions = async () => {
 };
 
 
-const userIcon = require('./assets/images/travel.png'); // Dodanie ścieżki do ikony
+const userIcon = require('./assets/images/traveler.png'); // Dodanie ścieżki do ikony
 const savePlaceToFirestore = async (place) => {
     try {
         const placeDoc = doc(collection(db, "places"));
@@ -75,12 +83,23 @@ const savePlaceToFirestore = async (place) => {
         throw error;
     }
 };
+
 const getCurrentLocation = async () => {
     try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert(
+                "Permission Denied",
+                "We need location permissions to show your location on the map."
+            );
+            return null;
+        }
+
         const location = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.High,
         });
-        console.log("Fetched user location:", location);
+
+        console.log("Fetched user location:", location.coords); // Dodano logowanie
 
         return {
             latitude: location.coords.latitude,
@@ -88,10 +107,15 @@ const getCurrentLocation = async () => {
         };
     } catch (error) {
         console.error("Error fetching user location:", error);
-        Alert.alert("Error", "Unable to fetch your current location.");
-        return null; // Zwraca null w przypadku błędu
+        return null;
     }
 };
+
+
+
+
+
+
 
 
 
@@ -105,14 +129,13 @@ const initialState = {
     loading: true,
     selectedPlace: null,
     isDetailPanelVisible: false,
-    isSearchPanelVisible: false,
     isAddSpotPanelVisible: false,
-    isFavoritesPanelVisible: false,
-    isJourneyPanelVisible: false,
     isMenuVisible: false,
     isOptionsPanelVisible: false,
     isProfilePanelVisible: false,
     isSettingsPanelVisible: false,
+    isJourneyPanelVisible: false,
+    isFavoritesPanelVisible: false, // Sterowanie widocznością FavoritesPanel
     addSpotLocation: null,
     userProfile: { // Właściwość do przechowywania danych profilu użytkownika
         name: 'User Name',
@@ -139,19 +162,23 @@ const reducer = (state, action) => {
         case 'TOGGLE_MENU':
             return { ...state, isMenuVisible: !state.isMenuVisible };
         case 'TOGGLE_OPTIONS_PANEL':
-            return { ...state, isOptionsPanelVisible: !state.isOptionsPanelVisible };
-        case 'SET_SEARCH_PANEL_VISIBLE':
-            return { ...state, isSearchPanelVisible: action.payload };
+            return { ...state, isOptionsPanelVisible: !state.isOptionsPanelVisible
+            };
+        case 'SET_PROFILE_PANEL_VISIBLE':
+            return { ...state, isProfilePanelVisible: action.payload };
+
+        case 'SET_SETTINGS_PANEL_VISIBLE':
+            return { ...state, isSettingsPanelVisible: action.payload };
+        case 'TOGGLE_JOURNEY_PANEL':
+            return { ...state, isJourneyPanelVisible: action.payload };
+        case 'TOGGLE_FAVORITES_PANEL':
+            return { ...state, isFavoritesPanelVisible: action.payload };
         case 'SET_ADD_SPOT_PANEL_VISIBLE':
             return {
                 ...state,
                 isAddSpotPanelVisible: action.payload,
                 addSpotLocation: action.payload ? state.addSpotLocation : null,
             };
-        case 'SET_FAVORITES_PANEL_VISIBLE':
-            return { ...state, isFavoritesPanelVisible: action.payload };
-        case 'SET_JOURNEY_PANEL_VISIBLE':
-            return { ...state, isJourneyPanelVisible: action.payload };
         case 'ADD_NEW_SPOT':
             return { ...state, places: [...state.places, action.payload] };
         case 'SET_ADD_SPOT_LOCATION':
@@ -187,91 +214,168 @@ const reducer = (state, action) => {
 };
 
 
-const calculateMapRegion = (userLocation, places) => {
-    if (!userLocation && places.length === 0) return null;
-
-    let minLat = userLocation?.latitude || places[0].latitude;
-    let maxLat = userLocation?.latitude || places[0].latitude;
-    let minLng = userLocation?.longitude || places[0].longitude;
-    let maxLng = userLocation?.longitude || places[0].longitude;
-
-    places.forEach((place) => {
-        minLat = Math.min(minLat, place.latitude);
-        maxLat = Math.max(maxLat, place.latitude);
-        minLng = Math.min(minLng, place.longitude);
-        maxLng = Math.max(maxLng, place.longitude);
-    });
-
-    const latitudeDelta = maxLat - minLat + 0.01; // Dodajemy niewielki margines
-    const longitudeDelta = maxLng - minLng + 0.01;
-
-    return {
-        latitude: (maxLat + minLat) / 2,
-        longitude: (maxLng + minLng) / 2,
-        latitudeDelta,
-        longitudeDelta,
-    };
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const toRadians = (deg) => deg * (Math.PI / 180);
+    const R = 6371; // Promień Ziemi w kilometrach
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRadians(lat1)) *
+        Math.cos(toRadians(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c * 1000; // Odległość w metrach
 };
 
-const customMapStyle = [
-    {
-        featureType: "poi",
-        stylers: [
-            { visibility: "off" }
-        ]
+
+const handleVisitButtonClick = (place) => {
+    if (!state.location || !place.latitude || !place.longitude) {
+        Alert.alert("Error", "Location data is incomplete.");
+        return;
     }
-];
+
+    const distance = calculateDistance(
+        state.location.latitude,
+        state.location.longitude,
+        place.latitude,
+        place.longitude
+    );
+
+    if (distance > 100) {
+        Alert.alert("You are not there yet, wanderer!");
+        return;
+    }
+
+    const alreadyInJourney = state.journey.some((journeyPlace) => journeyPlace.id === place.id);
+
+    if (alreadyInJourney) {
+        Alert.alert("Info", "This place is already in your journey history.");
+        return;
+    }
+
+    const updatedJourney = [...state.journey, place]; // Dodanie miejsca do podróży
+    dispatch({ type: "SET_JOURNEY", payload: updatedJourney });
+
+    saveJourneyToFirestore(auth.currentUser.uid, updatedJourney) // Zapis do Firestore
+        .then(() => {
+            Alert.alert("Success", "Place added to your journey!");
+        })
+        .catch((error) => {
+            console.error("Error saving journey:", error);
+            Alert.alert("Error", "Failed to save place to journey.");
+        });
+};
 
 // Utility functions to save data to Firestore
-const saveFavoritesToFirestore = async (userId, favorites) => {
+const saveFavoritesToFirestore = async (favorites) => {
     try {
-        // Filtruj dane przed zapisaniem
-        const validFavorites = favorites.filter(fav => fav.id && fav.name);
-        const userDoc = doc(db, 'users', userId);
-        await setDoc(userDoc, { favorites: validFavorites }, { merge: true });
+        const userDoc = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userDoc, { favorites }, { merge: true }); // Scalanie z istniejącymi danymi
     } catch (error) {
-        console.error('Error saving favorites to Firestore:', error);
-        throw error;
+        console.error('Error saving favorites:', error);
+        Alert.alert('Error', 'Failed to save favorites.');
     }
 };
 
 
-const saveJourneyToFirestore = async (userId, journey) => {
+const saveJourneyToFirestore = async (journey) => {
     try {
-        const userDoc = doc(db, 'users', userId);
-        await setDoc(userDoc, { journey }, { merge: true });
+        const userDoc = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userDoc, { journey }, { merge: true }); // Scalanie z istniejącymi danymi
     } catch (error) {
-        console.error('Error saving journey to Firestore:', error);
-        throw error;
+        console.error('Error saving journey:', error);
+        Alert.alert('Error', 'Failed to save journey.');
     }
 };
+
+const onToggleFavorite = async (place) => {
+    if (!auth.currentUser) {
+        Alert.alert("Error", "You must be logged in to manage favorites.");
+        return;
+    }
+
+    const updatedFavorites = state.favorites.some((fav) => fav.id === place.id)
+        ? state.favorites.filter((fav) => fav.id !== place.id)
+        : [...state.favorites, place];
+
+    dispatch({ type: 'SET_FAVORITES', payload: updatedFavorites });
+
+    try {
+        await saveFavoritesToFirestore(updatedFavorites);
+    } catch (error) {
+        console.error("Error saving favorites:", error);
+    }
+};
+
 
 const App = () => {
+    // Stany i logika
     const [state, dispatch] = useReducer(reducer, initialState);
     const [email, setEmail] = useState(''); // Stan dla email
     const [password, setPassword] = useState(''); // Stan dla hasła
     const [user, setUser] = useState(null); // Stan użytkownika
     const [loading, setLoading] = useState(true); // Stan ładowania
     const mapViewRef = React.useRef(null); // Referencja do MapView
-    const [userLocation, setUserLocation] = useState(null); // Stan do przechowywania lokalizacji użytkownika
+    const [userLocation, setUserLocation] = useState(null); // Stan dla lokalizacji użytkownika
     const [mapRegion, setMapRegion] = useState(null);
     const [userProfile, setUserProfile] = useState({
         name: 'User Name',
         bio: '',
-        distanceTraveled: 0, // Dodanie dystansu do profilu użytkownika
+        distanceTraveled: 0, // Dystans użytkownika
         friends: ['Friend 1', 'Friend 2'],
     });
     const centerMapOnUser = () => {
-        if (mapViewRef.current && state.location) {
+        if (!state.location) {
+            Alert.alert("Error", "User location is not available.");
+            return;
+        }
+
+        if (mapViewRef.current) {
             const region = {
-                latitude: state.location.coords.latitude,
-                longitude: state.location.coords.longitude,
+                ...state.location,
                 latitudeDelta: 0.01,
                 longitudeDelta: 0.01,
             };
-            mapViewRef.current.animateToRegion(region, 1000); // Animacja w czasie 1 sekundy
+            mapViewRef.current.animateToRegion(region, 1000);
         } else {
-            Alert.alert('Location Error', 'User location is not available.');
+            Alert.alert("Error", "MapView reference is not set.");
+        }
+    };
+
+
+
+    const fetchFavorites = async () => {
+        try {
+            const userDoc = doc(db, 'users', state.user.uid);
+            const userSnapshot = await getDoc(userDoc);
+
+            if (userSnapshot.exists() && userSnapshot.data().favorites) {
+                dispatch({ type: 'SET_FAVORITES', payload: userSnapshot.data().favorites });
+            }
+        } catch (error) {
+            console.error("Error fetching favorites:", error);
+            Alert.alert("Error", "Failed to fetch favorites.");
+        }
+    };
+
+    const fetchUserData = async (userId) => {
+        try {
+            const userDoc = doc(db, 'users', userId);
+            const userData = await getDoc(userDoc)
+            if (userData.exists()) {
+                const { favorites = [], journey = [] } = userData.data();
+                dispatch({ type: 'SET_FAVORITES', payload: favorites });
+                dispatch({ type: 'SET_JOURNEY', payload: journey });
+            } else {
+                console.log("No user data found. Initializing empty favorites and journey.");
+                dispatch({ type: 'SET_FAVORITES', payload: [] });
+                dispatch({ type: 'SET_JOURNEY', payload: [] });
+            }
+        } catch (error) {
+            console.error('Error fetching user data:', error);
+            Alert.alert('Error', 'Failed to fetch user data.');
         }
     };
 
@@ -317,10 +421,10 @@ const App = () => {
             console.log("Logged in user:", userCredential.user);
 
             // Ustawienie użytkownika w stanie
-            dispatch({ type: 'SET_USER', payload: userCredential.user });
+            dispatch({type: 'SET_USER', payload: userCredential.user});
 
             // Wyłączenie ekranu ładowania
-            dispatch({ type: 'SET_LOADING', payload: false });
+            dispatch({type: 'SET_LOADING', payload: false});
         } catch (error) {
             console.error("Login error:", error.code, error.message);
 
@@ -352,7 +456,7 @@ const App = () => {
         try {
             await createUserWithEmailAndPassword(auth, email.trim(), password.trim());
             Alert.alert("Registration successful!", "You can now log in.");
-            dispatch({ type: "TOGGLE_REGISTER" }); // Przełącz na tryb logowania
+            dispatch({type: "TOGGLE_REGISTER"}); // Przełącz na tryb logowania
         } catch (error) {
             console.error("Registration error:", error.code, error.message);
 
@@ -371,64 +475,31 @@ const App = () => {
     };
 
 
-
-
-
-
-
-
-
-
-
-
-
     const handleLogout = async () => {
         try {
             await signOut(auth);
-            dispatch({ type: 'SET_USER', payload: null });
-            dispatch({ type: 'TOGGLE_OPTIONS_PANEL' });
+            dispatch({ type: 'SET_USER', payload: null }); // Usuń użytkownika ze stanu
             Alert.alert('Successfully logged out');
         } catch (error) {
             Alert.alert("Logout error", error.message);
         }
     };
 
-    const openProfile = () => {
-        dispatch({ type: 'TOGGLE_OPTIONS_PANEL' });
+    const handleProfileOpen = () => {
         dispatch({ type: 'SET_PROFILE_PANEL_VISIBLE', payload: true });
     };
 
-    const openSettings = () => {
-        dispatch({ type: 'TOGGLE_OPTIONS_PANEL' });
+    const handleSettingsOpen = () => {
         dispatch({ type: 'SET_SETTINGS_PANEL_VISIBLE', payload: true });
     };
-
-    const loadUserData = async (userId) => {
-        try {
-            const userDoc = doc(db, 'users', userId);
-            const userData = await getDoc(userDoc);
-            if (userData.exists()) {
-                const data = userData.data();
-                dispatch({ type: 'SET_FAVORITES', payload: data.favorites || [] });
-                dispatch({ type: 'SET_JOURNEY', payload: data.journey || [] });
-                return data; // Zwracamy dane użytkownika
-            }
-        } catch (error) {
-            console.error('Error loading user data:', error);
-        }
-        return null;
-    };
-
-
-
 
 
     const handleSaveUsername = async (newUsername) => {
         if (auth.currentUser) {
             try {
                 const userDoc = doc(db, 'users', auth.currentUser.uid);
-                await setDoc(userDoc, { name: newUsername }, { merge: true });
-                setUserProfile((prev) => ({ ...prev, name: newUsername }));
+                await setDoc(userDoc, {name: newUsername}, {merge: true});
+                setUserProfile((prev) => ({...prev, name: newUsername}));
                 Alert.alert('Success', 'Username updated successfully!');
             } catch (error) {
                 Alert.alert('Error', 'Could not update username.');
@@ -437,202 +508,131 @@ const App = () => {
         }
     };
 
-
-    const fetchLocationAndData = async () => {
+    const fetchPlaces = async () => {
         try {
-            console.log("Requesting location permissions...");
-            const { status } = await Location.requestForegroundPermissionsAsync();
-
-            if (status !== 'granted') {
-                console.warn("Location permissions not granted.");
-                Alert.alert(
-                    'Permission Denied',
-                    'We need location permissions to show your location on the map.'
-                );
-                return null;
-            }
-
-            console.log("Permissions granted. Fetching location...");
-            const location = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.High,
-            });
-
-            console.log("Fetched user location:", location.coords);
-            return location.coords; // Zwracamy tylko współrzędne
-        } catch (error) {
-            console.error("Error fetching user location:", error);
-            Alert.alert('Error', 'Unable to fetch your current location.');
-            return null;
-        }
-    };
-
-
-
-    const fetchPlaces = async (dispatch) => {
-        try {
-            // Pobierz kolekcję miejsc z Firestore
             const querySnapshot = await getDocs(collection(db, "places"));
             const places = querySnapshot.docs.map((doc) => {
                 const data = doc.data();
-
                 return {
-                    id: doc.id, // ID miejsca
-                    name: data.name || "Unknown", // Domyślna nazwa, jeśli brak
-                    latitude: data.latitude || null, // Współrzędne miejsca
-                    longitude: data.longitude || null,
+                    id: doc.id,
+                    ...data,
+                    latitude: parseFloat(data.latitude), // Parsowanie na liczby
+                    longitude: parseFloat(data.longitude),
                 };
             });
 
-            console.log('Fetched places:', places);
 
-            // Wyślij dane do reduktora
-            dispatch({ type: "SET_PLACES", payload: places });
-
-            return places; // Opcjonalnie zwróć miejsca, jeśli trzeba ich użyć
+            console.log("Fetched places:", places); // Debug - sprawdź dane
+            dispatch({ type: 'SET_PLACES', payload: places });
         } catch (error) {
-            console.error("Error fetching places:", error);
-            Alert.alert('Error', 'Unable to fetch places.');
-            return []; // Zwróć pustą tablicę w przypadku błędu
+            console.error("Error fetching places from Firestore:", error);
+            Alert.alert("Error", "Failed to fetch places from Firestore.");
         }
     };
 
-
-
-
-    let locationSubscription = null;
-
-    const startTrackingDistance = async () => {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert("Permission to access location was denied");
-            return;
-        }
-
-        // Uzyskanie pozwolenia na działanie w tle
-        await Location.requestBackgroundPermissionsAsync();
-
-        let lastPosition = null;
-
-        locationSubscription = await Location.watchPositionAsync(
-            {
-                accuracy: Location.Accuracy.High,
-                timeInterval: 1000, // Śledzenie co sekundę
-                distanceInterval: 1, // Aktualizacja co 1 metr
-            },
-            (location) => {
-                if (lastPosition) {
-                    const distance = haversine(lastPosition.coords, location.coords);
-                    setUserProfile((prevProfile) => ({
-                        ...prevProfile,
-                        distanceTraveled: prevProfile.distanceTraveled + distance,
-                    }));
-                }
-                lastPosition = location;
-            }
-        );
-    };
-
-    const stopTrackingDistance = () => {
-        if (locationSubscription) {
-            locationSubscription.remove();
-            locationSubscription = null;
-            saveDistanceToFirebase(); // Zapisanie dystansu po zakończeniu śledzenia
-        }
-    };
-    const saveDistanceToFirebase = async () => {
-        if (auth.currentUser) {
-            const userDoc = doc(db, "users", auth.currentUser.uid);
-            await setDoc(userDoc, { distanceTraveled: userProfile.distanceTraveled }, { merge: true });
-        }
-    };
-
-
-    useEffect(() => {
-        const checkPermissions = async () => {
-            try {
-                console.log("Checking permissions...");
-                const permissionsGranted = await requestPermissions();
-                if (!permissionsGranted) {
-                    console.warn("Permissions not granted. Some features may not work.");
-                } else {
-                    console.log("All permissions granted.");
-                }
-            } catch (error) {
-                console.error("Error checking permissions:", error);
-            }
-        };
-
-        checkPermissions();
-    }, []); // Sprawdzanie uprawnień tylko raz przy montowaniu komponentu
-    useEffect(() => {
-        const initializeLocation = async () => {
-            const location = await getCurrentLocation();
-            if (location) {
-                console.log("Setting user location:", location);
-                setUserLocation(location); // Ustawienie tylko jeśli dane są poprawne
-            } else {
-                console.warn("User location is null");
-            }
-        };
-
-        initializeLocation();
-    }, []);
 
 
 
     useEffect(() => {
-        let isMounted = true; // Flaga zapobiegająca wyciekom pamięci
-
         const initializeApp = async () => {
             try {
-                console.log("Initializing app...");
+                // Monitorowanie sesji użytkownika
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        dispatch({ type: 'SET_USER', payload: user });
+                        console.log("User logged in:", user);
+
+                        // Upewnienie się, że dokument użytkownika w Firestore istnieje
+                        await ensureUserDocumentExists(user.uid);
+
+                        // Pobranie ulubionych miejsc użytkownika
+                        await fetchFavorites(user.uid);
+
+                        // Pobranie historii podróży użytkownika
+                        await fetchJourney(user.uid);
+                    } else {
+                        dispatch({ type: 'SET_USER', payload: null });
+                        console.log("No user logged in.");
+                    }
+                });
+
+                // Prośba o uprawnienia lokalizacji i galerii
+                const permissionsGranted = await requestPermissions();
+                if (!permissionsGranted) {
+                    console.warn("Permissions not granted.");
+                    dispatch({ type: 'SET_LOADING', payload: false });
+                    return;
+                }
 
                 // Pobranie lokalizacji użytkownika
-                const locationData = await fetchLocationAndData();
-                if (isMounted && locationData) {
-                    console.log("Location fetched:", locationData);
-                    setUserLocation(locationData); // Ustawienie lokalnej lokalizacji
+                const location = await getCurrentLocation();
+                if (location) {
+                    console.log("User location fetched:", location);
+                    dispatch({ type: 'SET_LOCATION', payload: location });
                     setMapRegion({
-                        latitude: locationData.latitude,
-                        longitude: locationData.longitude,
+                        ...location,
                         latitudeDelta: 0.01,
                         longitudeDelta: 0.01,
                     });
                 } else {
-                    console.warn("No location data fetched.");
+                    console.warn("User location not available. Setting default coordinates.");
+                    setMapRegion({
+                        latitude: 37.4219983, // Domyślne współrzędne (np. Googleplex)
+                        longitude: -122.084,
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01,
+                    });
                 }
 
-                // Pobranie miejsc
-                const places = await fetchPlaces(dispatch);
-                if (isMounted && places.length > 0) {
-                    console.log("Places fetched successfully:", places);
-                } else {
-                    console.warn("No places found.");
-                }
+                // Pobranie miejsc z Firestore
+                await fetchPlaces();
+
             } catch (error) {
                 console.error("Error during initialization:", error);
+                Alert.alert("Error", "Failed to initialize the app.");
             } finally {
-                if (isMounted) {
-                    dispatch({ type: 'SET_LOADING', payload: false }); // Koniec ładowania
+                dispatch({ type: 'SET_LOADING', payload: false });
+            }
+        };
+
+        // Funkcja do pobierania ulubionych miejsc
+        const fetchFavorites = async (userId) => {
+            try {
+                const userDoc = doc(db, 'users', userId);
+                const userSnapshot = await getDoc(userDoc);
+
+                if (userSnapshot.exists() && userSnapshot.data().favorites) {
+                    dispatch({ type: 'SET_FAVORITES', payload: userSnapshot.data().favorites });
                 }
+            } catch (error) {
+                console.error("Error fetching favorites:", error);
+                Alert.alert("Error", "Failed to fetch favorites.");
+            }
+        };
+
+        // Funkcja do pobierania historii podróży
+        const fetchJourney = async (userId) => {
+            try {
+                const userDoc = doc(db, 'users', userId);
+                const userSnapshot = await getDoc(userDoc);
+
+                if (userSnapshot.exists() && userSnapshot.data().journey) {
+                    dispatch({ type: 'SET_JOURNEY', payload: userSnapshot.data().journey });
+                }
+            } catch (error) {
+                console.error("Error fetching journey:", error);
+                Alert.alert("Error", "Failed to fetch journey history.");
             }
         };
 
         initializeApp();
-
-        return () => {
-            isMounted = false; // Zapobiegaj wyciekom pamięci
-            console.log("Cleanup complete.");
-        };
-    }, []);
+    }, [dispatch]);
 
 
 
 
-    const onSelectPlace = (place) => {
-        dispatch({ type: 'SET_SELECTED_PLACE', payload: place });
-        dispatch({ type: 'SET_SEARCH_PANEL_VISIBLE', payload: false });
-    };
+
+
 
     const onSaveSpot = async (newSpot) => {
         if (!auth.currentUser?.uid) {
@@ -660,66 +660,71 @@ const App = () => {
     };
 
 
+    const toggleFavorite = async (place) => {
+        try {
+            const userDocRef = doc(db, 'users', state.user.uid);
+            const userDoc = await getDoc(userDocRef);
 
+            let updatedFavorites = [];
+            if (userDoc.exists()) {
+                const currentFavorites = userDoc.data().favorites || [];
+                const isFavorite = currentFavorites.some((fav) => fav.id === place.id);
 
+                if (isFavorite) {
+                    // Remove from favorites
+                    updatedFavorites = currentFavorites.filter((fav) => fav.id !== place.id);
+                } else {
+                    // Add to favorites
+                    updatedFavorites = [...currentFavorites, place];
+                }
+            } else {
+                // First favorite if no data exists
+                updatedFavorites = [place];
+            }
 
-
-    const toggleFavorite = (place) => {
-        if (!state.user?.uid) return;
-        if (!place || !place.id || !place.name) {
-            console.error("Invalid place object:", place);
-            Alert.alert("Error", "Place data is incomplete.");
-            return;
+            // Update Firestore and state
+            await setDoc(userDocRef, { favorites: updatedFavorites }, { merge: true });
+            dispatch({ type: 'SET_FAVORITES', payload: updatedFavorites });
+        } catch (error) {
+            console.error('Error toggling favorite:', error);
+            Alert.alert('Error', 'Could not update favorites.');
         }
-        dispatch({ type: 'TOGGLE_FAVORITE', payload: place });
-    };
-
-    const onAddToJourney = (place) => {
-        if (!auth.currentUser) {
-            Alert.alert("Error", "You must be logged in to save a place to your journey.");
-            return;
-        }
-
-        // Sprawdzenie, czy miejsce jest już w journey
-        const alreadyInJourney = state.journey.some((journeyPlace) => journeyPlace.id === place.id);
-
-        if (alreadyInJourney) {
-            Alert.alert("Info", "This place is already in your journey history.");
-            return;
-        }
-
-        const updatedJourney = [...state.journey, place]; // Dodanie nowego miejsca
-        dispatch({ type: "SET_JOURNEY", payload: updatedJourney }); // Aktualizacja stanu journey
-
-        saveJourneyToFirestore(auth.currentUser.uid, updatedJourney) // Zapis do Firestore
-            .then(() => {
-                console.log("Journey updated successfully in Firestore.");
-            })
-            .catch((error) => {
-                console.error("Error saving journey:", error);
-                Alert.alert("Error", "Failed to save place to journey.");
-            });
     };
 
 
 
-    const markPlaceAsVisited = async (place) => {
+
+    const onAddToJourney = async (place) => {
         if (!auth.currentUser) {
-            Alert.alert("Error", "You must be logged in to mark a place as visited.");
+            Alert.alert("Error", "You must be logged in to manage your journey.");
             return;
         }
+
+        if (state.journey.some((journeyPlace) => journeyPlace.id === place.id)) {
+            Alert.alert("Info", "This place is already in your journey.");
+            return;
+        }
+
+        const updatedJourney = [...state.journey, place];
+        dispatch({ type: 'SET_JOURNEY', payload: updatedJourney });
 
         try {
-            const updatedJourney = [...state.journey, { ...place, visitedAt: new Date().toISOString() }];
-            dispatch({ type: "SET_JOURNEY", payload: updatedJourney });
-
-            await saveJourneyToFirestore(auth.currentUser.uid, updatedJourney);
-
-            Alert.alert("Success", "Place marked as visited!");
+            await saveJourneyToFirestore(updatedJourney);
         } catch (error) {
-            console.error("Error marking place as visited:", error);
-            Alert.alert("Error", "Failed to mark the place as visited.");
+            console.error("Error saving journey:", error);
         }
+    };
+
+
+
+    const openDetailPanel = (place) => {
+        if (!place || !place.id) {
+            console.error("Invalid place object:", place);
+            Alert.alert("Error", "Invalid place data.");
+            return;
+        }
+
+        dispatch({ type: 'SET_SELECTED_PLACE', payload: place }); // Ustaw wybrane miejsce w stanie aplikacji
     };
 
 
@@ -730,7 +735,7 @@ const App = () => {
         }
 
         const updatedJourney = state.journey.filter((journeyPlace) => journeyPlace.id !== placeId);
-        dispatch({ type: "SET_JOURNEY", payload: updatedJourney });
+        dispatch({type: "SET_JOURNEY", payload: updatedJourney});
 
         saveJourneyToFirestore(auth.currentUser.uid, updatedJourney)
             .then(() => {
@@ -743,9 +748,8 @@ const App = () => {
     };
 
 
-
-
     if (state.loading) {
+        console.log("Loading state active. Rendering loader.");
         return (
             <View style={globalStyles.container}>
                 <ActivityIndicator size="large" color="#0000ff" />
@@ -788,7 +792,7 @@ const App = () => {
 
                 <TouchableOpacity
                     onPress={() =>
-                        dispatch({ type: "TOGGLE_REGISTER" }) // Przełącz tryb
+                        dispatch({type: "TOGGLE_REGISTER"}) // Przełącz tryb
                     }
                     style={globalStyles.switchButton}
                 >
@@ -803,8 +807,8 @@ const App = () => {
     }
 
 
-
     const handleMarkerClick = (place) => {
+        console.log("Marker clicked:", place);
         if (!place.id || !place.name) {
             console.error("Marker is missing required properties:", place);
             Alert.alert("Error", "Marker data is incomplete.");
@@ -815,199 +819,147 @@ const App = () => {
     };
 
 
+
+
+
     const handleLongPress = (event) => {
-        const { coordinate } = event.nativeEvent;
-        dispatch({ type: 'SET_ADD_SPOT_LOCATION', payload: coordinate });
-        dispatch({ type: 'SET_ADD_SPOT_PANEL_VISIBLE', payload: true });
+        const {coordinate} = event.nativeEvent;
+        dispatch({type: 'SET_ADD_SPOT_LOCATION', payload: coordinate});
+        dispatch({type: 'SET_ADD_SPOT_PANEL_VISIBLE', payload: true});
     };
 
     return (
-        <GestureHandlerRootView style={globalStyles.container}>
-            <Provider>
-                <SafeAreaView style={globalStyles.container}>
+        <GestureHandlerRootView style={{flex: 1}}>
+            <NavigationContainer>
+                <Tab.Navigator
+                    screenOptions={({ route }) => ({
+                        tabBarIcon: ({ color, size }) => {
+                            let iconName;
 
-                    {/* Logo Button */}
-                    <TouchableOpacity
-                        style={globalStyles.logoContainer}
-                        onPress={() => dispatch({ type: 'TOGGLE_OPTIONS_PANEL' })}
-                    >
-                        <Image
-                            source={require('./assets/images/logo_wanders.jpg')}
-                            style={globalStyles.logo}
-                        />
-                    </TouchableOpacity>
+                            switch (route.name) {
+                                case 'Map':
+                                    iconName = 'map';
+                                    break;
+                                case 'Search':
+                                    iconName = 'magnify';
+                                    break;
+                                case 'Favorites':
+                                    iconName = 'heart';
+                                    break;
+                                case 'Journey':
+                                    iconName = 'map-marker-path';
+                                    break;
+                                default:
+                                    iconName = 'circle';
+                            }
 
-                    <MapView
-                        style={globalStyles.map}
-                        region={mapRegion}
-                        customMapStyle={customMapStyle}
-                        onLongPress={handleLongPress}
-                    >
-                        {/* Marker dla bieżącej lokalizacji użytkownika */}
-                        {userLocation ? (
-                            <Marker
-                                coordinate={{
-                                    latitude: userLocation.latitude,
-                                    longitude: userLocation.longitude,
-                                }}
-                                title="Your Location"
-                                description="Your current location"
-                            >
-                                <Image
-                                    source={userIcon} // Przekazanie wcześniej załadowanej ikony
-                                    style={{ width: 40, height: 40 }}
-                                    resizeMode="contain"
+                            return (
+                                <MaterialCommunityIcons
+                                    name={iconName}
+                                    color={color}
+                                    size={size}
                                 />
-                            </Marker>
-
-                        ) : (
-                            console.log('User location not available:', userLocation)
-                        )}
-
-                        {/* Pozostałe znaczniki */}
-                        {state.places.map((place, index) => (
-                            place.latitude && place.longitude ? (
-                                <Marker
-                                    key={place.id || `marker-${index}`}
-                                    coordinate={{
-                                        latitude: parseFloat(place.latitude),
-                                        longitude: parseFloat(place.longitude),
-                                    }}
-                                    onPress={() => handleMarkerClick(place)} // Przekazanie pełnego obiektu
-                                />
-                            ) : null
-                        ))}
-                    </MapView>
-
-
-                    <CenterButton onPress={centerMapOnUser} />
-
-                    {/* Existing Menu Button */}
-                    <TouchableOpacity
-                        style={globalStyles.menuButton}
-                        onPress={() => dispatch({ type: 'TOGGLE_MENU' })}
-                    >
-                        <MaterialCommunityIcons name="menu" size={30} color="black" />
-                    </TouchableOpacity>
-
-                    {state.isMenuVisible && (
-                        <View style={globalStyles.overlay}>
-                            <TouchableOpacity
-                                style={globalStyles.overlay}
-                                onPress={() => dispatch({ type: 'TOGGLE_MENU' })}
+                            );
+                        },
+                        tabBarActiveTintColor: '#44e830',
+                        tabBarInactiveTintColor: '#ffffff',
+                        headerShown: false,
+                        tabBarStyle: {
+                            backgroundColor: '#33673c',
+                            height: 60,
+                        },
+                    })}
+                >
+                    <Tab.Screen name="Map">
+                        {() => (
+                            <MapScreen
+                                mapRegion={mapRegion}
+                                userLocation={state.location}
+                                state={state}
+                                mapViewRef={mapViewRef}
+                                dispatch={dispatch} // Przekazywanie dispatch jako prop
+                                handleLongPress={handleLongPress}
+                                centerMapOnUser={centerMapOnUser}
+                                handleMarkerClick={handleMarkerClick} // Przekazywanie handleMarkerClick
                             />
-                            <View style={globalStyles.menuContainer}>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        dispatch({ type: 'SET_SEARCH_PANEL_VISIBLE', payload: true });
-                                        dispatch({ type: 'TOGGLE_MENU' });
-                                    }}
-                                >
-                                    <Text style={globalStyles.menuOptionText}>Search for a spot</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        dispatch({ type: 'SET_FAVORITES_PANEL_VISIBLE', payload: true });
-                                        dispatch({ type: 'TOGGLE_MENU' });
-                                    }}
-                                >
-                                    <Text style={globalStyles.menuOptionText}>My favourite spots</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        dispatch({ type: 'SET_JOURNEY_PANEL_VISIBLE', payload: true });
-                                        dispatch({ type: 'TOGGLE_MENU' }); // Ukrywa menu
-                                    }}
-                                >
-                                    <Text style={globalStyles.menuOptionText}>My journey</Text>
-                                </TouchableOpacity>
-
-                            </View>
-                        </View>
-                    )}
-
-                    {state.isOptionsPanelVisible && (
-                        <OptionsPanel
-                            onClose={() => dispatch({ type: 'TOGGLE_OPTIONS_PANEL' })}
-                            onProfile={openProfile}
-                            onSettings={openSettings}
-                            onLogout={handleLogout}
-                        />
-                    )}
-
-                    {state.isProfilePanelVisible && (
-                        <ProfilePanel
-                            onClose={() => dispatch({ type: 'SET_PROFILE_PANEL_VISIBLE', payload: false })}
-                            userProfile={userProfile} // Przekazanie nazwy użytkownika
-                        />
-                    )}
-
-                    {state.isSettingsPanelVisible && (
-                        <SettingsPanel
-                            onClose={() => dispatch({ type: 'SET_SETTINGS_PANEL_VISIBLE', payload: false })}
-                            onSaveUsername={handleSaveUsername} // Dodanie funkcji zapisu
-                            currentUsername={userProfile.name} // Przekazanie obecnej nazwy użytkownika
-                        />
-                    )}
+                        )}
+                    </Tab.Screen>
+                    <Tab.Screen name="Search" component={SearchingPanel} />
+                    <Tab.Screen name="Favorites" component={FavoritesPanel} />
+                    <Tab.Screen name="Journey" component={JourneyPanel} />
+                </Tab.Navigator>
 
 
-
-                    {/* Additional Panels */}
-                    {state.isSearchPanelVisible && (
-                        <SearchingPanel
-                            onClose={() => dispatch({ type: 'SET_SEARCH_PANEL_VISIBLE', payload: false })}
-                            places={state.places}
-                            userLocation={userLocation || { latitude: 0, longitude: 0 }} // Zapewnij domyślne wartości
-                            onSelectPlace={onSelectPlace}
-                        />
-                    )}
-
-
-                    {state.isAddSpotPanelVisible && (
-                        <AddSpotPanel
-                            onClose={() => dispatch({ type: 'SET_ADD_SPOT_PANEL_VISIBLE', payload: false })}
-                            onSaveSpot={onSaveSpot}
-                            userLocation={state.location}
-                            selectedLocation={state.addSpotLocation}
-                        />
-                    )}
-
-                    {state.isFavoritesPanelVisible && (
-                        <FavoritesPanel
-                            favorites={state.favorites}
-                            onSelectFavorite={onSelectPlace}
-                            onClose={() => dispatch({ type: 'SET_FAVORITES_PANEL_VISIBLE', payload: false })}
-                        />
-                    )}
-                    {state.isJourneyPanelVisible && (
-                        <JourneyPanel
-                            journey={state.journey} // Przekazuje historię podróży
-                            onRemoveFromJourney={onRemoveFromJourney} // Funkcja usuwania z historii
-                            onClose={() => dispatch({ type: 'SET_JOURNEY_PANEL_VISIBLE', payload: false })} // Zamknięcie panelu
-                        />
-                    )}
-
-                    {state.isDetailPanelVisible && state.selectedPlace && (
-                        <DetailPanel
-                            place={state.selectedPlace}
-                            userLocation={state.location}
-                            isFavorite={state.favorites.some((fav) => fav.id === state.selectedPlace?.id)}
-                            onClose={() => dispatch({ type: 'CLOSE_DETAIL_PANEL' })}
-                            onToggleFavorite={toggleFavorite}
-                            onAddToJourney={onAddToJourney} // Funkcja dodania miejsca do journey
-                            journey={state.journey}
-                        />
-                    )}
+                {/* Dodatkowe panele poza zakładkami */}
+                {state.isOptionsPanelVisible && (
+                    <OptionsPanel
+                        onClose={handleOptionsPanelClose}
+                        onProfile={handleProfileOpen}
+                        onSettings={handleSettingsOpen}
+                        onLogout={handleLogout}
+                    />
+                )}
 
 
+                {state.isProfilePanelVisible && (
+                    <ProfilePanel
+                        onClose={() => dispatch({type: 'SET_PROFILE_PANEL_VISIBLE', payload: false})}
+                        userProfile={userProfile}
+                    />
+                )}
+
+                {state.isSettingsPanelVisible && (
+                    <SettingsPanel
+                        onClose={() => dispatch({type: 'SET_SETTINGS_PANEL_VISIBLE', payload: false})}
+                        onSaveUsername={handleSaveUsername}
+                        currentUsername={userProfile.name}
+                    />
+                )}
+
+                {state.isAddSpotPanelVisible && (
+                    <AddSpotPanel
+                        onClose={() => dispatch({type: 'SET_ADD_SPOT_PANEL_VISIBLE', payload: false})}
+                        onSaveSpot={onSaveSpot}
+                        userLocation={state.location}
+                        selectedLocation={state.addSpotLocation}
+                    />
+                )}
+
+                {state.isDetailPanelVisible && state.selectedPlace && (
+                    <DetailPanel
+                        place={state.selectedPlace}
+                        isFavorite={state.favorites.some((fav) => fav.id === state.selectedPlace?.id)}
+                        onToggleFavorite={toggleFavorite} // Pass the toggleFavorite function
+                        onClose={() => dispatch({ type: 'CLOSE_DETAIL_PANEL' })}
+                        onAddToJourney={onAddToJourney}
+                        journey={state.journey}
+                    />
+                )}
 
 
+                {state.isJourneyPanelVisible && (
+                    <JourneyPanel
+                        journey={state.journey}
+                        places={state.places}
+                        onAddToJourney={onAddToJourney}
+                        onRemoveFromJourney={onRemoveFromJourney}
+                        openDetailPanel={openDetailPanel} // Dodanie funkcji do propsów
+                        onClose={() => dispatch({ type: 'TOGGLE_JOURNEY_PANEL', payload: false })}
+                    />
+                )}
+
+                {state.isFavoritesPanelVisible && (
+                    <FavoritesPanel
+                        favorites={state.favorites}
+                        onToggleFavorite={toggleFavorite}
+                        onClose={() => dispatch({ type: 'TOGGLE_FAVORITES_PANEL', payload: false })}
+                    />
+                )}
 
 
-                </SafeAreaView>
-            </Provider>
+            </NavigationContainer>
         </GestureHandlerRootView>
     );
 };
 
-export default App;
+    export default App;
