@@ -19,7 +19,7 @@ export const globalStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingHorizontal: 16,
-        backgroundColor: '#3B82F6', // Tło
+        backgroundColor: '#33673c', // Tło
         elevation: 2, // Zmniejsz cień
         shadowOpacity: 0, // Usuń cień na iOS
     },
@@ -55,7 +55,7 @@ export const globalStyles = StyleSheet.create({
         paddingVertical: 12,
         paddingHorizontal: 20,
         borderRadius: 8,
-        backgroundColor: '#3B82F6',
+        backgroundColor: '#33673c',
         alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -78,7 +78,7 @@ export const globalStyles = StyleSheet.create({
         paddingVertical: 12,
         paddingHorizontal: 20,
         borderRadius: 8,
-        backgroundColor: '#3B82F6',
+        backgroundColor: '#33673c',
     },
     buttonIcon: {
         marginRight: 8, // Odstęp między ikoną a tekstem
@@ -89,7 +89,7 @@ export const globalStyles = StyleSheet.create({
         marginTop: 10,
     },
     toggleButtonText: {
-        color: '#3B82F6',
+        color: '#33673c',
         fontSize: 14,
         textAlign: 'center',
     },
@@ -245,6 +245,6 @@ export const globalStyles = StyleSheet.create({
     },
     switchText: {
         fontSize: 14,
-        color: '#3B82F6',
+        color: '#33673c',
     },
 });

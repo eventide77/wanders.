@@ -1,49 +1,75 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { Modal, View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { settingsPanelStyles as styles } from '../styles/SettingsPanel.styles';
+import { auth, db } from '../firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
-const SettingsPanel = ({ onClose, onSaveUsername, currentUsername, startTrackingDistance, stopTrackingDistance }) => {
+const SettingsPanel = ({
+                           isVisible, // Widoczność modala
+                           onClose, // Funkcja zamknięcia
+                           currentUsername,
+                           dispatch, // Dispatch do aktualizacji stanu w reducerze
+                       }) => {
     const [newUsername, setNewUsername] = useState(currentUsername || '');
 
-    const handleSave = () => {
-        if (newUsername.trim()) {
-            onSaveUsername(newUsername); // Save the new username
-            Alert.alert('Success', 'Username saved successfully');
-        } else {
+    const handleSave = async () => {
+        if (!newUsername.trim()) {
             Alert.alert('Error', 'Username cannot be empty');
+            return;
+        }
+
+        try {
+            if (!auth.currentUser) {
+                Alert.alert('Error', 'You must be logged in to change the username.');
+                return;
+            }
+
+            const userDocRef = doc(db, 'users', auth.currentUser.uid);
+
+            // Zapisz nową nazwę użytkownika w Firestore
+            await setDoc(userDocRef, { name: newUsername }, { merge: true });
+
+            // Zaktualizuj stan użytkownika w aplikacji
+            dispatch({
+                type: 'SET_USER_PROFILE',
+                payload: { name: newUsername },
+            });
+
+            Alert.alert('Success', 'Username updated successfully!');
+            onClose(); // Zamknij modal po zapisaniu
+        } catch (error) {
+            console.error('Error saving username:', error);
+            Alert.alert('Error', 'Failed to update username. Please try again.');
         }
     };
 
     return (
-        <View style={styles.settingsPanelContainer}>
-            {/* Close Button */}
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                <Text style={styles.closeButtonText}>X</Text>
-            </TouchableOpacity>
+        <Modal visible={isVisible} animationType="fade" transparent={true}>
+            <View style={styles.settingsPanelContainer}>
+                <View style={styles.panelContent}>
+                    {/* Przycisk zamykający */}
+                    <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                        <Text style={styles.closeButtonText}>X</Text>
+                    </TouchableOpacity>
 
-            <Text style={styles.settingsTitle}>Settings</Text>
+                    {/* Tytuł */}
+                    <Text style={styles.settingsTitle}>Settings</Text>
 
-            {/* Username Input */}
-            <TextInput
-                style={styles.input}
-                placeholder="Enter new username"
-                value={newUsername}
-                onChangeText={setNewUsername}
-            />
+                    {/* Pole do edycji nazwy użytkownika */}
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Enter new username"
+                        value={newUsername}
+                        onChangeText={setNewUsername}
+                    />
 
-            {/* Save Username Button */}
-            <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                <Text style={styles.saveButtonText}>Save Username</Text>
-            </TouchableOpacity>
-
-            {/* Distance Tracking Buttons */}
-            <TouchableOpacity style={styles.trackButton} onPress={startTrackingDistance}>
-                <Text style={styles.trackButtonText}>Start Tracking Distance</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.trackButton} onPress={stopTrackingDistance}>
-                <Text style={styles.trackButtonText}>Stop Tracking Distance</Text>
-            </TouchableOpacity>
-        </View>
+                    {/* Przycisk zapisu */}
+                    <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                        <Text style={styles.saveButtonText}>Save Username</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
     );
 };
 

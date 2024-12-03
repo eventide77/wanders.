@@ -9,10 +9,26 @@ import { navigationStyles } from '../styles/navigation.styles';
 
 const Tab = createBottomTabNavigator();
 
-const BottomTabs = () => {
+const BottomTabs = ({ state, dispatch, mapViewRef }) => {
+    const handleSelectPlace = (place) => {
+        console.log("Place selected from SearchingPanel:", place);
+
+        // Ustaw wybrane miejsce w stanie aplikacji
+        dispatch({ type: 'SET_SELECTED_PLACE', payload: place });
+
+        // Przejdź do ekranu Map
+        if (mapViewRef.current) {
+            mapViewRef.current.animateToRegion({
+                latitude: place.latitude,
+                longitude: place.longitude,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+            }, 1000);
+        }
+    };
+
     return (
         <Tab.Navigator
-
             screenOptions={({ route }) => ({
                 headerShown: false, // Ukrywa nagłówek nawigacji
                 tabBarStyle: {
@@ -48,10 +64,55 @@ const BottomTabs = () => {
             })}
         >
             {/* Definiowanie zakładek */}
-            <Tab.Screen name="Map" component={MapScreen} />
-            <Tab.Screen name="Search" component={SearchingPanel} />
-            <Tab.Screen name="Favorites" component={FavoritesPanel} />
-            <Tab.Screen name="Journey" component={JourneyPanel} />
+            <Tab.Screen name="Map">
+                {() => (
+                    <MapScreen
+                        state={state}
+                        dispatch={dispatch}
+                        mapViewRef={mapViewRef}
+                    />
+                )}
+            </Tab.Screen>
+
+            <Tab.Screen name="Search">
+                {() => (
+                    <SearchingPanel
+                        onSelectPlace={(place) => {
+                            dispatch({ type: 'SET_SELECTED_PLACE', payload: place });
+                            if (mapViewRef.current) {
+                                mapViewRef.current.animateToRegion({
+                                    latitude: place.latitude,
+                                    longitude: place.longitude,
+                                    latitudeDelta: 0.01,
+                                    longitudeDelta: 0.01,
+                                }, 1000);
+                            }
+                        }}
+                    />
+                )}
+            </Tab.Screen>
+
+
+
+            <Tab.Screen name="Favorites">
+                {() => (
+                    <FavoritesPanel
+                        favorites={state.favorites}
+                        onToggleFavorite={(place) => dispatch({ type: 'TOGGLE_FAVORITE', payload: place })}
+                        openDetailPanel={(place) => dispatch({ type: 'SET_SELECTED_PLACE', payload: place })}
+                    />
+                )}
+            </Tab.Screen>
+
+            <Tab.Screen name="Journey">
+                {() => (
+                    <JourneyPanel
+                        journey={state.journey}
+                        onAddToJourney={(place) => dispatch({ type: 'ADD_TO_JOURNEY', payload: place })}
+                        openDetailPanel={(place) => dispatch({ type: 'SET_SELECTED_PLACE', payload: place })}
+                    />
+                )}
+            </Tab.Screen>
         </Tab.Navigator>
     );
 };

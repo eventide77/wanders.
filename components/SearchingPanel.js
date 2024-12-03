@@ -1,94 +1,87 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { searchingPanelStyles as styles } from '../styles/SearchingPanel.styles';
-import { getDistance } from 'geolib';
-import Fuse from 'fuse.js';
-import * as Location from 'expo-location';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 
-const SearchingPanel = ({ onClose, places, onSelectPlace, userLocation }) => {
-    const [query, setQuery] = useState('');
+const SearchingPanel = ({ onSelectPlace }) => {
+    const [searchQuery, setSearchQuery] = useState('');
     const [filteredPlaces, setFilteredPlaces] = useState([]);
+    const [allPlaces, setAllPlaces] = useState([]);
 
-    // Fuse.js configuration for fuzzy search
-    const fuse = new Fuse(places, {
-        keys: ['name'],
-        threshold: 0.3,
-        includeScore: true,
-    });
+    // Pobieranie miejsc z Firestore przy montowaniu komponentu
+    const fetchAllPlaces = async () => {
+        try {
+            const querySnapshot = await getDocs(collection(db, 'places'));
+            const placesFromFirebase = querySnapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+            }));
+            setAllPlaces(placesFromFirebase);
+        } catch (error) {
+            console.error('Error fetching places:', error);
+            Alert.alert('Error', 'Failed to fetch places from the database.');
+        }
+    };
 
-    // Check user location and calculate distances
     useEffect(() => {
-        const searchAndSortPlaces = () => {
-            console.log("Current query:", query);
-            console.log("Places:", places);
+        fetchAllPlaces(); // Pobierz miejsca tylko raz
+    }, []);
 
-            if (!query.length) {
-                setFilteredPlaces([]);
-                return;
-            }
+    // Wyszukiwanie w allPlaces
+    const handleSearch = (query) => {
+        setSearchQuery(query);
 
-            const results = fuse.search(query).map((result) => result.item);
+        if (!query.length) {
+            setFilteredPlaces([]);
+            return;
+        }
 
-            const resultsWithDistance = results
-                .filter((place) => place.latitude && place.longitude) // Filtruje miejsca bez współrzędnych
-                .map((place) => ({
-                    ...place,
-                    distance: userLocation
-                        ? getDistance(
-                            {
-                                latitude: userLocation.latitude,
-                                longitude: userLocation.longitude,
-                            },
-                            {
-                                latitude: parseFloat(place.latitude),
-                                longitude: parseFloat(place.longitude),
-                            }
-                        )
-                        : null,
-                }))
-                .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+        const results = allPlaces.filter((place) =>
+            place.name?.toLowerCase().includes(query.toLowerCase())
+        );
 
-            console.log("Filtered places with distance:", resultsWithDistance);
+        setFilteredPlaces(results);
+    };
 
-            setFilteredPlaces(resultsWithDistance);
-        };
-
-        searchAndSortPlaces();
-    }, [query, places, userLocation]);
-
+    // Obsługa wyboru miejsca z listy
+    const handleSelectPlace = (place) => {
+        console.log('Selected place:', place); // Debugowanie
+        if (onSelectPlace) {
+            onSelectPlace(place); // Powiadomienie rodzica o wybranym miejscu
+        } else {
+            console.warn('onSelectPlace is not defined');
+        }
+    };
 
     return (
         <View style={styles.panelContainer}>
-            <Text style={styles.title}>Search for a Spot</Text>
+            <View style={styles.contentWrapper}>
+                <Text style={styles.title}>Search for a Spot</Text>
 
-            <TextInput
-                style={styles.input}
-                placeholder="Enter spot name"
-                value={query}
-                onChangeText={setQuery}
-            />
+                <TextInput
+                    style={styles.input}
+                    placeholder="Enter spot name"
+                    value={searchQuery}
+                    onChangeText={handleSearch}
+                />
 
-            <FlatList
-                data={filteredPlaces}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                    <TouchableOpacity onPress={() => onSelectPlace(item)}>
-                        <Text style={styles.resultItem}>
-                            {item.name} {item.distance !== null ? ` - ${item.distance} meters away` : ''}
-                        </Text>
-                    </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                    query.length > 0 ? (
-                        <Text style={styles.noResults}>No results found</Text>
-                    ) : null
-                }
-            />
-
-
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
+                <FlatList
+                    style={styles.resultList} // Dodano ograniczenie wysokości listy
+                    data={filteredPlaces}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity onPress={() => handleSelectPlace(item)}>
+                            <Text style={styles.resultItem}>{item.name}</Text>
+                        </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                        searchQuery.length > 0 ? (
+                            <Text style={styles.noResults}>No results found</Text>
+                        ) : null
+                    }
+                />
+            </View>
         </View>
     );
 };

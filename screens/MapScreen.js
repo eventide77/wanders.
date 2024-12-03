@@ -8,7 +8,6 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Image } from 'react-native';
 
-
 // Ikona podróżnika
 const travelerIcon = require('../assets/images/traveler.png');
 
@@ -48,6 +47,23 @@ const MapScreen = ({
         fetchPlaces();
     }, [dispatch]);
 
+    // Przesuwanie mapy na wybrane miejsce
+    useEffect(() => {
+        if (state.selectedPlace && mapViewRef.current) {
+            const { latitude, longitude } = state.selectedPlace;
+            mapViewRef.current.animateToRegion(
+                {
+                    latitude,
+                    longitude,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01,
+                },
+                1000
+            );
+            console.log(`Centered map on selected place: ${state.selectedPlace.name}`);
+        }
+    }, [state.selectedPlace, mapViewRef]);
+
     // Obsługa kliknięcia znacznika
     const handleMarkerClick = (place) => {
         if (!place.id || !place.name) {
@@ -55,7 +71,9 @@ const MapScreen = ({
             Alert.alert("Error", "Marker data is incomplete.");
             return;
         }
-        dispatch({ type: 'SET_SELECTED_PLACE', payload: place });
+
+        dispatch({ type: 'SET_SELECTED_PLACE', payload: place }); // Ustaw wybrane miejsce
+        dispatch({ type: 'SET_DETAIL_PANEL_VISIBLE', payload: true }); // Pokaż `DetailPanel`
         console.log(`Marker clicked: ${place.name}`);
     };
 
@@ -97,8 +115,8 @@ const MapScreen = ({
                     >
                         <Image
                             source={travelerIcon}
-                            style={{ width: 40, height: 40 }} // Zmniejsz rozmiar tutaj
-                            resizeMode="contain" // Zapewnia odpowiednie proporcje
+                            style={{ width: 40, height: 40 }}
+                            resizeMode="contain"
                         />
                     </Marker>
                 )}
@@ -120,7 +138,6 @@ const MapScreen = ({
                         />
                     );
                 })}
-
             </MapView>
 
             {/* Center Button */}

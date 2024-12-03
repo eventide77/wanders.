@@ -156,17 +156,19 @@ const reducer = (state, action) => {
         case 'SET_LOADING':
             return { ...state, loading: action.payload };
         case 'SET_SELECTED_PLACE':
-            return { ...state, selectedPlace: action.payload, isDetailPanelVisible: true };
+            return {
+                ...state,
+                selectedPlace: action.payload,
+                isDetailPanelVisible: action.payload ? true : state.isDetailPanelVisible
+            };
         case 'CLOSE_DETAIL_PANEL':
             return { ...state, isDetailPanelVisible: false, selectedPlace: null };
         case 'TOGGLE_MENU':
             return { ...state, isMenuVisible: !state.isMenuVisible };
         case 'TOGGLE_OPTIONS_PANEL':
-            return { ...state, isOptionsPanelVisible: !state.isOptionsPanelVisible
-            };
+            return { ...state, isOptionsPanelVisible: !state.isOptionsPanelVisible };
         case 'SET_PROFILE_PANEL_VISIBLE':
             return { ...state, isProfilePanelVisible: action.payload };
-
         case 'SET_SETTINGS_PANEL_VISIBLE':
             return { ...state, isSettingsPanelVisible: action.payload };
         case 'TOGGLE_JOURNEY_PANEL':
@@ -195,23 +197,23 @@ const reducer = (state, action) => {
             const updatedJourney = [...state.journey, action.payload];
             return { ...state, journey: updatedJourney };
         }
+        case 'REMOVE_FROM_JOURNEY': {
+            const updatedJourney = state.journey.filter(journeyPlace => journeyPlace.id !== action.payload);
+            return { ...state, journey: updatedJourney };
+        }
         case 'SET_FAVORITES':
             return { ...state, favorites: action.payload };
         case 'SET_JOURNEY':
             return { ...state, journey: action.payload };
-        case 'SET_PROFILE_PANEL_VISIBLE':
-            return { ...state, isProfilePanelVisible: action.payload };
-        case 'SET_SETTINGS_PANEL_VISIBLE':
-            return { ...state, isSettingsPanelVisible: action.payload };
         case 'SET_USER_PROFILE':
             return { ...state, userProfile: action.payload };
-        case "TOGGLE_REGISTER":
+        case 'TOGGLE_REGISTER':
             return { ...state, isRegistering: !state.isRegistering };
-
         default:
             return state;
     }
 };
+
 
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -313,37 +315,81 @@ const onToggleFavorite = async (place) => {
 const App = () => {
     // Stany i logika
     const [state, dispatch] = useReducer(reducer, initialState);
-    const [email, setEmail] = useState(''); // Stan dla email
-    const [password, setPassword] = useState(''); // Stan dla hasła
-    const [user, setUser] = useState(null); // Stan użytkownika
-    const [loading, setLoading] = useState(true); // Stan ładowania
-    const mapViewRef = React.useRef(null); // Referencja do MapView
-    const [userLocation, setUserLocation] = useState(null); // Stan dla lokalizacji użytkownika
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const mapViewRef = React.useRef(null);
+    const [userLocation, setUserLocation] = useState(null);
     const [mapRegion, setMapRegion] = useState(null);
+    const [isSearchingPanelVisible, setIsSearchingPanelVisible] = useState(false);
+    const [selectedPlace, setSelectedPlace] = useState(null);
     const [userProfile, setUserProfile] = useState({
         name: 'User Name',
         bio: '',
-        distanceTraveled: 0, // Dystans użytkownika
+        distanceTraveled: 0,
         friends: ['Friend 1', 'Friend 2'],
     });
+
     const centerMapOnUser = () => {
-        if (!state.location) {
-            Alert.alert("Error", "User location is not available.");
+        if (!userLocation) {
+            Alert.alert('Error', 'User location is not available.');
             return;
         }
 
         if (mapViewRef.current) {
             const region = {
-                ...state.location,
+                ...userLocation,
                 latitudeDelta: 0.01,
                 longitudeDelta: 0.01,
             };
             mapViewRef.current.animateToRegion(region, 1000);
         } else {
-            Alert.alert("Error", "MapView reference is not set.");
+            Alert.alert('Error', 'MapView reference is not set.');
         }
     };
 
+    // Funkcja zamykająca panel wyszukiwania
+    const handleCloseSearchingPanel = () => {
+        setIsSearchingPanelVisible(false);
+    };
+
+    const handleSelectPlace = (place) => {
+        console.log("Selected place from SearchingPanel:", place);
+        setSelectedPlace(place); // Ustaw wybrane miejsce
+        dispatch({ type: 'SET_SELECTED_PLACE', payload: place }); // Ustaw w stanie globalnym
+        dispatch({ type: 'SET_DETAIL_PANEL_VISIBLE', payload: true }); // Pokaż `DetailPanel`
+        setIsSearchingPanelVisible(false); // Zamknij `SearchingPanel`
+    };
+
+
+    // Pobieranie lokalizacji użytkownika przy montowaniu komponentu
+    useEffect(() => {
+        const fetchLocation = async () => {
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== 'granted') {
+                    Alert.alert('Permission denied', 'Location access is required to use this feature.');
+                    return;
+                }
+
+                const location = await Location.getCurrentPositionAsync({});
+                setUserLocation({
+                    latitude: location.coords.latitude,
+                    longitude: location.coords.longitude,
+                });
+
+                console.log("User location updated:", {
+                    latitude: location.coords.latitude,
+                    longitude: location.coords.longitude,
+                });
+            } catch (error) {
+                console.error("Error fetching location:", error);
+            }
+        };
+
+        fetchLocation();
+    }, []);
 
 
     const fetchFavorites = async () => {
@@ -485,13 +531,6 @@ const App = () => {
         }
     };
 
-    const handleProfileOpen = () => {
-        dispatch({ type: 'SET_PROFILE_PANEL_VISIBLE', payload: true });
-    };
-
-    const handleSettingsOpen = () => {
-        dispatch({ type: 'SET_SETTINGS_PANEL_VISIBLE', payload: true });
-    };
 
 
     const handleSaveUsername = async (newUsername) => {
@@ -521,8 +560,7 @@ const App = () => {
                 };
             });
 
-
-            console.log("Fetched places:", places); // Debug - sprawdź dane
+            console.log("Fetched places from Firestore:", places);
             dispatch({ type: 'SET_PLACES', payload: places });
         } catch (error) {
             console.error("Error fetching places from Firestore:", error);
@@ -815,8 +853,9 @@ const App = () => {
             return;
         }
 
-        dispatch({ type: 'SET_SELECTED_PLACE', payload: place });
+        dispatch({ type: 'SET_SELECTED_PLACE', payload: place }); // Ustaw wybrane miejsce
     };
+
 
 
 
@@ -829,7 +868,7 @@ const App = () => {
     };
 
     return (
-        <GestureHandlerRootView style={{flex: 1}}>
+        <GestureHandlerRootView style={{ flex: 1 }}>
             <NavigationContainer>
                 <Tab.Navigator
                     screenOptions={({ route }) => ({
@@ -877,20 +916,49 @@ const App = () => {
                                 userLocation={state.location}
                                 state={state}
                                 mapViewRef={mapViewRef}
-                                dispatch={dispatch} // Przekazywanie dispatch jako prop
+                                dispatch={dispatch}
                                 handleLongPress={handleLongPress}
                                 centerMapOnUser={centerMapOnUser}
-                                handleMarkerClick={handleMarkerClick} // Przekazywanie handleMarkerClick
+                                selectedPlace={state.selectedPlace} // Dodano
                             />
                         )}
                     </Tab.Screen>
-                    <Tab.Screen name="Search" component={SearchingPanel} />
-                    <Tab.Screen name="Favorites" component={FavoritesPanel} />
+
+
+                    {/* Dodanie przycisku otwierającego panel wyszukiwania */}
+                    <Tab.Screen name="Search">
+                        {() => (
+                            <SearchingPanel
+                                onSelectPlace={(place) => {
+                                    dispatch({ type: 'SET_SELECTED_PLACE', payload: place });
+                                    if (mapViewRef.current) {
+                                        mapViewRef.current.animateToRegion({
+                                            latitude: place.latitude,
+                                            longitude: place.longitude,
+                                            latitudeDelta: 0.01,
+                                            longitudeDelta: 0.01,
+                                        }, 1000);
+                                    }
+                                }}
+                            />
+                        )}
+                    </Tab.Screen>
+
+
+                    <Tab.Screen name="Favorites">
+                        {() => (
+                            <FavoritesPanel
+                                favorites={state.favorites}
+                                onToggleFavorite={(place) => dispatch({ type: 'TOGGLE_FAVORITE', payload: place })}
+                                allPlaces={state.places} // Wszystkie znaczniki
+                            />
+                        )}
+                    </Tab.Screen>
+
                     <Tab.Screen name="Journey" component={JourneyPanel} />
                 </Tab.Navigator>
 
-
-                {/* Dodatkowe panele poza zakładkami */}
+                {/* Dodatkowe panele */}
                 {state.isOptionsPanelVisible && (
                     <OptionsPanel
                         onClose={handleOptionsPanelClose}
@@ -900,17 +968,16 @@ const App = () => {
                     />
                 )}
 
-
                 {state.isProfilePanelVisible && (
                     <ProfilePanel
-                        onClose={() => dispatch({type: 'SET_PROFILE_PANEL_VISIBLE', payload: false})}
+                        onClose={() => dispatch({ type: 'SET_PROFILE_PANEL_VISIBLE', payload: false })}
                         userProfile={userProfile}
                     />
                 )}
 
                 {state.isSettingsPanelVisible && (
                     <SettingsPanel
-                        onClose={() => dispatch({type: 'SET_SETTINGS_PANEL_VISIBLE', payload: false})}
+                        onClose={() => dispatch({ type: 'SET_SETTINGS_PANEL_VISIBLE', payload: false })}
                         onSaveUsername={handleSaveUsername}
                         currentUsername={userProfile.name}
                     />
@@ -918,7 +985,7 @@ const App = () => {
 
                 {state.isAddSpotPanelVisible && (
                     <AddSpotPanel
-                        onClose={() => dispatch({type: 'SET_ADD_SPOT_PANEL_VISIBLE', payload: false})}
+                        onClose={() => dispatch({ type: 'SET_ADD_SPOT_PANEL_VISIBLE', payload: false })}
                         onSaveSpot={onSaveSpot}
                         userLocation={state.location}
                         selectedLocation={state.addSpotLocation}
@@ -928,14 +995,15 @@ const App = () => {
                 {state.isDetailPanelVisible && state.selectedPlace && (
                     <DetailPanel
                         place={state.selectedPlace}
-                        isFavorite={state.favorites.some((fav) => fav.id === state.selectedPlace?.id)}
-                        onToggleFavorite={toggleFavorite} // Pass the toggleFavorite function
+                        isFavorite={state.favorites.some(
+                            (fav) => fav.id === state.selectedPlace?.id
+                        )}
+                        onToggleFavorite={toggleFavorite}
                         onClose={() => dispatch({ type: 'CLOSE_DETAIL_PANEL' })}
                         onAddToJourney={onAddToJourney}
                         journey={state.journey}
                     />
                 )}
-
 
                 {state.isJourneyPanelVisible && (
                     <JourneyPanel
@@ -943,7 +1011,7 @@ const App = () => {
                         places={state.places}
                         onAddToJourney={onAddToJourney}
                         onRemoveFromJourney={onRemoveFromJourney}
-                        openDetailPanel={openDetailPanel} // Dodanie funkcji do propsów
+                        openDetailPanel={openDetailPanel}
                         onClose={() => dispatch({ type: 'TOGGLE_JOURNEY_PANEL', payload: false })}
                     />
                 )}
@@ -955,8 +1023,6 @@ const App = () => {
                         onClose={() => dispatch({ type: 'TOGGLE_FAVORITES_PANEL', payload: false })}
                     />
                 )}
-
-
             </NavigationContainer>
         </GestureHandlerRootView>
     );

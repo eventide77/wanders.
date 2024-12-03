@@ -39,7 +39,7 @@ const OptionsPanel = ({ userProfile }) => {
         <>
             {/* Przycisk otwierający menu */}
             <TouchableOpacity onPress={toggleMenu} style={styles.menuButton}>
-                <MaterialCommunityIcons name="dots-vertical" size={30} color="#333" />
+                <MaterialCommunityIcons name="dots-vertical" size={30} color="white" />
             </TouchableOpacity>
 
             {/* Dropdown Menu */}

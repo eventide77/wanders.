@@ -6,12 +6,12 @@ import {
     TextInput,
     Alert,
     Linking,
+    Image,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import FastImage from 'react-native-fast-image';
 import { detailPanelStyles } from '../styles/DetailPanel.styles';
 import { auth, db } from '../firebase';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const DetailPanel = ({
                          place = {},
@@ -20,7 +20,7 @@ const DetailPanel = ({
                          onAddToJourney,
                          userLocation,
                          journey,
-                         onUpdateMarker, // Funkcja przekazana do aktualizacji markerów
+                         onUpdateMarker,
                      }) => {
     const [isFavorite, setIsFavorite] = useState(initialIsFavorite);
     const [isVisited, setIsVisited] = useState(false);
@@ -37,55 +37,18 @@ const DetailPanel = ({
         setIsVisited(visited);
     }, [journey, place]);
 
-    const handleVisitButtonClick = async () => {
-        if (!userLocation) {
-            Alert.alert('Error', 'Your current location is unavailable.');
-            return;
-        }
+    // Funkcja sprawdzająca poprawność URL obrazu
+    const isValidImageUrl = (url) => url && typeof url === 'string' && url.startsWith('http');
 
-        const distance = calculateDistance(
-            userLocation.latitude,
-            userLocation.longitude,
-            place.latitude,
-            place.longitude
-        );
-
-        if (distance > 100) {
-            Alert.alert('You are not there yet, wanderer!');
-            return;
-        }
-
-        try {
-            await onAddToJourney(place);
-            setIsVisited(true);
-            Alert.alert('Success', 'Place marked as visited!');
-        } catch (error) {
-            Alert.alert('Error', 'Failed to mark place as visited.');
-        }
-    };
-
-    const calculateDistance = (lat1, lon1, lat2, lon2) => {
-        const toRadians = (degree) => (degree * Math.PI) / 180;
-        const R = 6371e3; // Promień Ziemi w metrach
-        const φ1 = toRadians(lat1);
-        const φ2 = toRadians(lat2);
-        const Δφ = toRadians(lat2 - lat1);
-        const Δλ = toRadians(lon2 - lon1);
-
-        const a =
-            Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        const distance = R * c; // Dystans w metrach
-        return distance;
-    };
-
+    // Funkcja do dodawania/usuwania ulubionych miejsc
     const toggleFavorite = async () => {
+        if (!auth.currentUser) {
+            Alert.alert('Error', 'You must be logged in to manage favorites.');
+            return;
+        }
+
         try {
-            const userDocRef = doc(db, 'users', auth.currentUser?.uid);
+            const userDocRef = doc(db, 'users', auth.currentUser.uid);
             const userDoc = await getDoc(userDocRef);
 
             let updatedFavorites = [];
@@ -94,20 +57,22 @@ const DetailPanel = ({
                 const isFav = currentFavorites.some((fav) => fav.id === place.id);
 
                 if (isFav) {
-                    // Usuń z ulubionych
                     updatedFavorites = currentFavorites.filter((fav) => fav.id !== place.id);
                 } else {
-                    // Dodaj do ulubionych
                     updatedFavorites = [...currentFavorites, place];
                 }
             } else {
-                updatedFavorites = [place]; // Pierwszy ulubiony
+                updatedFavorites = [place];
             }
 
             await setDoc(userDocRef, { favorites: updatedFavorites }, { merge: true });
-            setIsFavorite((prev) => !prev);
-            Alert.alert('Success', isFavorite ? 'Removed from favorites!' : 'Added to favorites!');
+            setIsFavorite(!isFavorite); // Zmień stan lokalny
+            Alert.alert(
+                'Success',
+                isFavorite ? 'Removed from favorites!' : 'Added to favorites!'
+            );
         } catch (error) {
+            console.error('Error toggling favorite:', error);
             Alert.alert('Error', 'Failed to update favorites.');
         }
     };
@@ -132,8 +97,6 @@ const DetailPanel = ({
             };
 
             await updateDoc(placeRef, updatedPlace);
-
-            // Aktualizacja w nadrzędnym komponencie
             onUpdateMarker({ ...place, ...updatedPlace });
 
             Alert.alert('Success', 'Marker updated successfully!');
@@ -211,11 +174,11 @@ const DetailPanel = ({
                             {place.name || 'N/A'}
                         </Text>
                         <View style={detailPanelStyles.imageContainer}>
-                            {place.imageUrl ? (
-                                <FastImage
+                            {isValidImageUrl(place.imageUrl) ? (
+                                <Image
                                     style={detailPanelStyles.placeImage}
                                     source={{ uri: place.imageUrl }}
-                                    resizeMode={FastImage.resizeMode.cover}
+                                    resizeMode="cover"
                                 />
                             ) : (
                                 <Text style={detailPanelStyles.imagePlaceholderText}>
@@ -227,6 +190,7 @@ const DetailPanel = ({
                             {place.description || 'No description available.'}
                         </Text>
 
+                        {/* Przycisk do ulubionych */}
                         <TouchableOpacity
                             style={detailPanelStyles.favoriteIcon}
                             onPress={toggleFavorite}
